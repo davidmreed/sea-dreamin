@@ -1,0 +1,26 @@
+minimum_cumulusci_version: "3.47.0"
+project:
+  name: Derbyforce
+  package:
+    name: Derbyforce
+    namespace: derbyforce
+    api_version: "52.0"
+  git:
+    default_branch: "main"
+  source_format: sfdx
+
+tasks:
+  robot:
+    options:
+      suites: robot/Derbyforce/tests
+      options:
+        outputdir: robot/Derbyforce/results
+
+  robot_testdoc:
+    options:
+      path: robot/Derbyforce/tests
+      output: robot/Derbyforce/doc/Derbyforce_tests.html
+
+  run_tests:
+    options:
+      required_org_code_coverage_percent: 100

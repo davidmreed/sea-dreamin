@@ -1,0 +1,164 @@
+name: Feature Test
+on:
+  push:
+    branches:
+      - feature/**
+      - main
+env:
+  CUMULUSCI_SERVICE_github: ${{ secrets.CUMULUSCI_SERVICE_github }}
+jobs:
+  unit_tests:
+    name: "Run Apex Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install sfdx
+        run: |
+          mkdir sfdx
+          wget -qO- https://developer.salesforce.com/media/salesforce-cli/sfdx-linux-amd64.tar.xz | tar xJ -C sfdx --strip-components 1
+          ./sfdx/install
+          echo ${{ secrets.SFDX_AUTH_URL }} > sfdx_auth
+          sfdx force:auth:sfdxurl:store -f sfdx_auth -d
+      - name: Set up Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: "3.9"
+      - name: Determine Python Version
+        id: python-version
+        run: |
+          echo "::set-output name=ver::$(python --version)"
+      - uses: actions/cache@v2
+        with:
+          path: venv
+          key: ${{ runner.os }}-${{ steps.python-version.outputs.ver }}-${{ hashFiles('requirements.txt') }}
+      - name: Install CumulusCI
+        run: |
+          python3 -m venv venv
+          venv/bin/pip install -r requirements.txt
+      - name: Build Org and Execute Tests
+        run: |
+          venv/bin/cci flow run ci_feature --org dev
+      - name: Store Test Results
+        uses: actions/upload-artifact@v1
+        with:
+          name: apex_test_results.xml
+          path: test_results.xml
+      - name: Delete Scratch Org
+        if: ${{ always() }}
+        run: |
+          venv/bin/cci org scratch_delete dev
+  robot_tests:
+    name: "Run Robot Framework Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install sfdx
+        run: |
+          mkdir sfdx
+          wget -qO- https://developer.salesforce.com/media/salesforce-cli/sfdx-linux-amd64.tar.xz | tar xJ -C sfdx --strip-components 1
+          ./sfdx/install
+          echo ${{ secrets.SFDX_AUTH_URL }} > sfdx_auth
+          sfdx force:auth:sfdxurl:store -f sfdx_auth -d
+      - name: Set up Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: "3.9"
+      - name: Install CumulusCI
+        run: |
+          python3 -m venv venv
+          venv/bin/pip install -r requirements.txt
+      - name: Build Org and Execute Tests
+        run: |
+          venv/bin/cci flow run qa_org --org qa
+          venv/bin/cci task run robot --org qa -o vars BROWSER:headlesschrome
+      - name: Store Robot Results
+        uses: actions/upload-artifact@v1
+        with:
+          name: robot
+          path: robot/Derbyforce/results
+      - name: Delete Scratch Org
+        if: ${{ always() }}
+        run: |
+          venv/bin/cci org scratch_delete qa
+  sfdx_scanner:
+    name: "Run SFDX Scanner"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install sfdx
+        run: |
+          mkdir sfdx
+          wget -qO- https://developer.salesforce.com/media/salesforce-cli/sfdx-linux-amd64.tar.xz | tar xJ -C sfdx --strip-components 1
+          ./sfdx/install
+          sfdx plugins:install @salesforce/sfdx-scanner
+      - name: Run Analysis
+        run: |
+          sfdx scanner:run -t force-app -e pmd -f junit -s 2 > results.xml
+      - name: Store Test Results
+        uses: actions/upload-artifact@v1
+        with:
+          name: sfdx-source-scanner-results.xml
+          path: results.xml
+  jest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - uses: actions/setup-node@v2-beta
+        with:
+          node-version: "14"
+      - name: Determine Node Version
+        id: node-version
+        run: |
+          echo "::set-output name=ver::$(node --version)"
+      - uses: actions/cache@v2
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ steps.node-version.outputs.ver }}-${{ hashFiles('package.json', 'package-lock.json') }}
+      - name: Install Packages
+        run: |
+          npm install
+      - name: Run Jest Tests
+        run: |
+          npx sfdx-lwc-jest --coverage -- --passWithNoTests
+  formatting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - uses: actions/setup-node@v2-beta
+        with:
+          node-version: "14"
+      - name: Determine Node Version
+        id: node-version
+        run: |
+          echo "::set-output name=ver::$(node --version)"
+      - uses: actions/cache@v2
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ steps.node-version.outputs.ver }}-${{ hashFiles('package.json', 'package-lock.json') }}
+      - name: Install Packages
+        run: |
+          npm install
+      - name: prettier
+        run: |
+          npx prettier "**/*.{cls,cmp,component,css,html,js,json,md,page,trigger,xml,yaml,yml}" --check
+  eslint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - uses: actions/setup-node@v2-beta
+        with:
+          node-version: "14"
+      - name: Determine Node Version
+        id: node-version
+        run: |
+          echo "::set-output name=ver::$(node --version)"
+      - uses: actions/cache@v2
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ steps.node-version.outputs.ver }}-${{ hashFiles('package.json', 'package-lock.json') }}
+      - name: Install Packages
+        run: |
+          npm install
+      - name: eslint
+        run: |
+          npx eslint "**/{aura,lwc}/**"
